@@ -1,0 +1,126 @@
+services:
+  postgres:
+    image: ${GITEA_POSTGRES_IMAGE}
+    container_name: gitea-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${GITEA_DB_NAME}
+      POSTGRES_USER: ${GITEA_DB_USER}
+      POSTGRES_PASSWORD: ${GITEA_DB_PASSWORD}
+      TZ: ${TZ}
+    volumes:
+      - ${GITEA_POSTGRES_PATH}:/var/lib/postgresql/data:Z
+    networks:
+      - gitea
+
+  gitea:
+    image: ${GITEA_IMAGE}
+    container_name: gitea
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      USER_UID: ${GITEA_USER_UID}
+      USER_GID: ${GITEA_USER_GID}
+      TZ: ${TZ}
+
+      # Base de datos
+      GITEA__database__DB_TYPE: ${GITEA_DB_TYPE}
+      GITEA__database__HOST: ${GITEA_DB_HOST}:${GITEA_DB_PORT}
+      GITEA__database__NAME: ${GITEA_DB_NAME}
+      GITEA__database__USER: ${GITEA_DB_USER}
+      GITEA__database__PASSWD: ${GITEA_DB_PASSWORD}
+
+      # URLs HTTP
+      GITEA__server__DOMAIN: ${GITEA_DOMAIN}
+      GITEA__server__ROOT_URL: ${GITEA_ROOT_URL}
+      GITEA__server__PROTOCOL: ${GITEA_SERVER_PROTOCOL}
+      GITEA__server__HTTP_PORT: ${GITEA_HTTP_PORT}
+
+      # SSH
+      GITEA__server__SSH_DOMAIN: ${GITEA_SSH_DOMAIN}
+      GITEA__server__SSH_PORT: ${GITEA_SSH_PORT}
+      GITEA__server__START_SSH_SERVER: ${GITEA_START_SSH_SERVER}
+
+      # Actions
+      GITEA__actions__ENABLED: ${GITEA_ACTIONS_ENABLED}
+
+      # Registro y visibilidad
+      GITEA__service__DISABLE_REGISTRATION: ${GITEA_DISABLE_REGISTRATION}
+      GITEA__service__REQUIRE_SIGNIN_VIEW: ${GITEA_REQUIRE_SIGNIN_VIEW}
+      GITEA__service__ENABLE_OPENID_SIGNUP: ${GITEA_ENABLE_OPENID_SIGNUP}
+      GITEA__service__ENABLE_OPENID_SIGNIN: ${GITEA_ENABLE_OPENID_SIGNIN}
+      GITEA__service__DISABLE_LOGIN_FORM: ${GITEA_DISABLE_LOGIN_FORM}
+      GITEA__service__HIDE_EMAIL_ADDRESS: ${GITEA_HIDE_EMAIL_ADDRESS}
+      GITEA__service__DEFAULT_ALLOW_CREATE_ORGANIZATION: ${GITEA_DEFAULT_ALLOW_CREATE_ORGANIZATION}
+      GITEA__service__DEFAULT_ORG_VISIBILITY: ${GITEA_DEFAULT_ORG_VISIBILITY}
+      GITEA__service__DEFAULT_VISIBILITY: ${GITEA_DEFAULT_VISIBILITY}
+
+      # UI Oscuro
+      GITEA__ui__DEFAULT_THEME: ${GITEA_DEFAULT_THEME}
+      GITEA__ui__THEMES: ${GITEA_UI_THEMES}
+
+    volumes:
+      - ${GITEA_DATA_PATH}:/data:Z
+    networks:
+      - gitea
+      - proxy
+
+    # Exponer SSH (contenedor y host mismo puerto)
+    ports:
+      - "${GITEA_SSH_PORT}:${GITEA_SSH_PORT}"
+
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "${TRAEFIK_DOCKER_NETWORK}"
+
+      traefik.http.services.gitea.loadbalancer.server.port: "${GITEA_HTTP_PORT}"
+
+      # Router principal (sin Authentik)
+      traefik.http.routers.gitea-main.rule: "Host(`${GITEA_DOMAIN}`)"
+      traefik.http.routers.gitea-main.entrypoints: "${TRAEFIK_ENTRYPOINT_SECURE}"
+      traefik.http.routers.gitea-main.tls: "true"
+      traefik.http.routers.gitea-main.tls.certresolver: "${TRAEFIK_CERTRESOLVER}"
+      traefik.http.routers.gitea-main.priority: "10"
+
+      # Router login + explore + perfil TheHomelessSherlock (con Authentik)
+      traefik.http.routers.gitea-login.rule: >-
+        Host(`${GITEA_DOMAIN}`) &&
+        (Path(`/user/login`) ||
+         PathPrefix(`/user/sign_up`) ||
+         PathPrefix(`/user/forgot_password`) ||
+         PathPrefix(`/user/two_factor`) ||
+         PathPrefix(`/login/oauth`) ||
+         PathPrefix(`/explore`) ||
+         PathPrefix(`/api`) ||
+         PathPrefix(`/api/swagger`) ||
+         PathRegexp(`^/TheHomelessSherlock/?$`))
+      traefik.http.routers.gitea-login.entrypoints: "${TRAEFIK_ENTRYPOINT_SECURE}"
+      traefik.http.routers.gitea-login.tls: "true"
+      traefik.http.routers.gitea-login.tls.certresolver: "${TRAEFIK_CERTRESOLVER}"
+      traefik.http.routers.gitea-login.middlewares: "${TRAEFIK_AUTH_MIDDLEWARE}"
+      traefik.http.routers.gitea-login.priority: "20"
+
+  gitea-runner:
+    image: ${GITEA_RUNNER_IMAGE}
+    container_name: gitea-act-runner
+    restart: unless-stopped
+    depends_on:
+      - gitea
+    environment:
+      GITEA_INSTANCE_URL: ${GITEA_INSTANCE_URL}
+      GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_REGISTRATION_TOKEN}
+      GITEA_RUNNER_NAME: ${GITEA_RUNNER_NAME}
+      GITEA_RUNNER_LABELS: ${GITEA_RUNNER_LABELS}
+    volumes:
+      - ${GITEA_RUNNER_DATA_PATH}:/data:Z
+      - /var/run/docker.sock:/var/run/docker.sock:Z
+    networks:
+      - gitea
+
+networks:
+  gitea:
+    driver: bridge
+  proxy:
+    external: true
+

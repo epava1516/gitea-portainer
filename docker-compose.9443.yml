@@ -1,0 +1,7 @@
+services:
+  portainer:
+    ports:
+      - "9443:9443"
+      # Si quisieras también el edge:
+      # - "8000:8000"
+

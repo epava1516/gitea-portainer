@@ -1,0 +1,43 @@
+services:
+  adguardhome:
+    image: ${ADGUARD_IMAGE}
+    container_name: adguardhome
+    restart: unless-stopped
+
+    volumes:
+      - ${ADGUARD_WORK_PATH}:/opt/adguardhome/work:Z
+      - ${ADGUARD_CONF_PATH}:/opt/adguardhome/conf:Z
+      - ${ADGUARD_CERT_CRT_PATH}:/certs/adguard.crt:ro,Z
+      - ${ADGUARD_CERT_KEY_PATH}:/certs/adguard.key:ro,Z
+
+    # Solo DNS/DoT expuestos en el host
+    ports:
+      # - "53:53/tcp"
+      # - "53:53/udp"
+      - "${ADGUARD_DOT_PORT}:853/tcp"   # DoT para Android (DNS privado)
+      # - "81:80/tcp"
+
+    networks:
+      proxy:
+        ipv4_address: ${ADGUARD_IPV4}
+
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "${TRAEFIK_DOCKER_NETWORK}"
+
+      # Router HTTPS para el panel web
+      traefik.http.routers.adguard.rule: "Host(`${ADGUARD_DOMAIN}`)"
+      traefik.http.routers.adguard.entrypoints: "${TRAEFIK_ENTRYPOINT_SECURE}"
+      traefik.http.routers.adguard.tls.certresolver: "${TRAEFIK_CERTRESOLVER}"
+
+      # Panel interno de AdGuard (HTTP en el contenedor)
+      # OJO: si es la primera vez y el panel escucha en 3000, cambia a 3000
+      traefik.http.services.adguard.loadbalancer.server.port: "${ADGUARD_HTTP_PORT}"
+
+      # Proteger el panel con Authentik (middleware definido en authentik-server)
+      traefik.http.routers.adguard.middlewares: "${TRAEFIK_AUTH_MIDDLEWARE}"
+
+networks:
+  proxy:
+    external: true
+

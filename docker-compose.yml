@@ -1,0 +1,55 @@
+services:
+  portainer:
+    image: ${PORTAINER_IMAGE:-portainer/portainer-ce:latest}
+    container_name: portainer
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    volumes:
+      # Clave de cifrado: misma clave montada en las dos rutas
+      - ${PORTAINER_SECRET_PATH:-/opt/portainer/secrets/portainer}:/run/secrets/portainer:ro,Z
+      - ${PORTAINER_SECRET_PATH:-/opt/portainer/secrets/portainer}:/run/portainer/portainer:ro,Z
+
+      # Socket de Docker (NO usar :Z aquí)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+      # Datos de Portainer (DB cifrada incluida)
+      - ${PORTAINER_DATA_PATH:-/opt/portainer/data}:/data:Z
+
+    # SELinux: evita bloqueos con docker.sock
+    security_opt:
+      - label=disable
+
+    networks:
+      - proxy
+
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "${TRAEFIK_DOCKER_NETWORK:-proxy}"
+
+      ############################
+      # 1) UI protegida (ej: SSO)
+      ############################
+      traefik.http.routers.portainer.rule: "Host(`${PORTAINER_DOMAIN:-portainer.example.com}`)"
+      traefik.http.routers.portainer.entrypoints: "${TRAEFIK_ENTRYPOINT_SECURE:-websecure}"
+      traefik.http.routers.portainer.tls.certresolver: "${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      traefik.http.routers.portainer.middlewares: "${TRAEFIK_AUTH_MIDDLEWARE:-authentik@docker}"
+      traefik.http.services.portainer.loadbalancer.server.port: "${PORTAINER_HTTP_PORT:-9000}"
+
+      #########################################################
+      # 2) API/App móvil SIN SSO, restringida por IP (ej: VPN)
+      #########################################################
+      traefik.http.middlewares.portainer-api-ip.ipwhitelist.sourcerange: "${PORTAINER_API_IP_WHITELIST:-10.8.0.0/24,172.18.0.1/32}"
+      traefik.http.routers.portainer-direct.rule: "Host(`${PORTAINER_API_DOMAIN:-portainer-api.example.com}`)"
+      traefik.http.routers.portainer-direct.entrypoints: "${TRAEFIK_ENTRYPOINT_SECURE:-websecure}"
+      traefik.http.routers.portainer-direct.tls.certresolver: "${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      traefik.http.routers.portainer-direct.middlewares: "portainer-api-ip"
+      traefik.http.routers.portainer-direct.service: "portainer"
+      traefik.http.routers.portainer-direct.priority: "100"
+
+networks:
+  proxy:
+    external: true
+

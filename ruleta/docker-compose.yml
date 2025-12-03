@@ -1,0 +1,57 @@
+services:
+  # Aplicación Next.js
+  app:
+    image: ${RULETA_IMAGE}
+    container_name: ruleta-app
+    restart: unless-stopped
+
+    environment:
+      NODE_ENV: ${RULETA_NODE_ENV}
+      NEXT_TELEMETRY_DISABLED: ${RULETA_NEXT_TELEMETRY_DISABLED}
+      # Si usas Supabase, descomenta y configura:
+      # NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      # NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      # SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+
+    networks:
+      - proxy
+
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "${TRAEFIK_DOCKER_NETWORK}"
+
+      # ---------------------------
+      # 1) Router EXISTENTE (subdominio)
+      # https://ruleta.example.com
+      # ---------------------------
+      traefik.http.routers.ruleta-sub.rule: "Host(`${RULETA_SUBDOMAIN}`)"
+      traefik.http.routers.ruleta-sub.entrypoints: "${TRAEFIK_ENTRYPOINT_SECURE}"
+      traefik.http.routers.ruleta-sub.tls.certresolver: "${TRAEFIK_CERTRESOLVER}"
+      traefik.http.routers.ruleta-sub.service: "ruleta"
+
+      # ---------------------------
+      # 2) Router NUEVO (.net + path)
+      # https://sherlockhomeless.net/ruleta
+      # ---------------------------
+      traefik.http.routers.ruleta-path.rule: "Host(`${RULETA_MAIN_DOMAIN}`) && PathPrefix(`/ruleta`)"
+      traefik.http.routers.ruleta-path.entrypoints: "${TRAEFIK_ENTRYPOINT_SECURE}"
+      traefik.http.routers.ruleta-path.tls.certresolver: "${TRAEFIK_CERTRESOLVER}"
+      traefik.http.routers.ruleta-path.service: "ruleta"
+      traefik.http.routers.ruleta-path.middlewares: "ruleta-strip@docker"
+
+      # Quita /ruleta antes de llegar a Next.js
+      traefik.http.middlewares.ruleta-strip.stripprefix.prefixes: "/ruleta"
+      traefik.http.middlewares.ruleta-strip.stripprefix.forceSlash: "true"
+
+      # Servicio interno (Next.js escucha en 3000)
+      traefik.http.services.ruleta.loadbalancer.server.port: "${RULETA_APP_PORT}"
+
+      # Proteger con Authentik (si quieres habilitarlo)
+      # OJO: si lo activas, ponlo en ambos routers o usa una cadena.
+      # traefik.http.routers.ruleta-sub.middlewares: "authentik@docker"
+      # traefik.http.routers.ruleta-path.middlewares: "authentik@docker,ruleta-strip@docker"
+
+networks:
+  proxy:
+    external: true
+

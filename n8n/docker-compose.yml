@@ -1,0 +1,71 @@
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    container_name: n8n
+    environment:
+      - DB_TYPE=${N8N_DB_TYPE}
+      - DB_POSTGRESDB_HOST=${N8N_DB_HOST}
+      - DB_POSTGRESDB_PORT=${N8N_DB_PORT}
+      - DB_POSTGRESDB_DATABASE=${N8N_DB_NAME}
+      - DB_POSTGRESDB_USER=${N8N_DB_USER}
+      - DB_POSTGRESDB_PASSWORD=${N8N_DB_PASSWORD}
+
+      - N8N_HOST=${N8N_HOST}
+      - N8N_PORT=${N8N_PORT}
+      - N8N_PROTOCOL=${N8N_PROTOCOL}
+      - WEBHOOK_URL=${N8N_WEBHOOK_URL}
+
+      - GENERIC_TIMEZONE=${N8N_TIMEZONE}
+
+      # Clave para cifrar credenciales
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+
+      - NODE_ENV=${N8N_NODE_ENV}
+      - N8N_DIAGNOSTICS_ENABLED=${N8N_DIAGNOSTICS_ENABLED}
+
+    networks:
+      - proxy
+      - n8n
+
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "proxy"
+
+      traefik.http.routers.n8n-ui.rule: "Host(`${N8N_DOMAIN}`)"
+      traefik.http.routers.n8n-ui.entrypoints: "${TRAEFIK_ENTRYPOINT_SECURE}"
+      traefik.http.routers.n8n-ui.tls: "true"
+      traefik.http.routers.n8n-ui.tls.certresolver: "${TRAEFIK_CERTRESOLVER}"
+      traefik.http.routers.n8n-ui.service: "n8n"
+      traefik.http.routers.n8n-ui.priority: "10"
+      traefik.http.routers.n8n-ui.middlewares: "${TRAEFIK_AUTH_MIDDLEWARE}"
+
+      traefik.http.routers.n8n-webhook.rule: "Host(`${N8N_DOMAIN}`) && (PathPrefix(`/webhook`) || PathPrefix(`/webhook-test`))"
+      traefik.http.routers.n8n-webhook.entrypoints: "${TRAEFIK_ENTRYPOINT_SECURE}"
+      traefik.http.routers.n8n-webhook.tls: "true"
+      traefik.http.routers.n8n-webhook.tls.certresolver: "${TRAEFIK_CERTRESOLVER}"
+      traefik.http.routers.n8n-webhook.service: "n8n"
+      traefik.http.routers.n8n-webhook.priority: "20"
+
+      traefik.http.services.n8n.loadbalancer.server.port: "${N8N_PORT}"
+
+  n8n-db:
+    image: postgres:16
+    container_name: n8n-pg
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - ${N8N_DB_DATA_PATH}:/var/lib/postgresql/data:Z
+    networks:
+      - n8n
+
+networks:
+  proxy:
+    external: true
+  n8n:
+    driver: bridge
+
+

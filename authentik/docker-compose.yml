@@ -1,0 +1,104 @@
+services:
+  authentik-postgres:
+    image: ${AUTHENTIK_POSTGRES_IMAGE}
+    container_name: authentik-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+      POSTGRES_USER: ${AUTHENTIK_DB_USER}
+      POSTGRES_DB: ${AUTHENTIK_DB_NAME}
+    volumes:
+      - ${AUTHENTIK_POSTGRES_PATH}:/var/lib/postgresql/data:Z
+    networks:
+      - authentik_internal
+
+  authentik-redis:
+    image: ${AUTHENTIK_REDIS_IMAGE}
+    container_name: authentik-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - ${AUTHENTIK_REDIS_PATH}:/data:Z
+    networks:
+      - authentik_internal
+
+  authentik-server:
+    image: ${AUTHENTIK_IMAGE}
+    container_name: authentik-server
+    restart: unless-stopped
+    command: ["server"]
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+
+      AUTHENTIK_POSTGRESQL__HOST: ${AUTHENTIK_DB_HOST}
+      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_DB_USER}
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DB_NAME}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+
+      AUTHENTIK_REDIS__HOST: ${AUTHENTIK_REDIS_HOST}
+
+      # Bootstrap inicial (primera vez)
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
+
+    depends_on:
+      - authentik-postgres
+      - authentik-redis
+
+    expose:
+      - "${AUTHENTIK_HTTP_PORT}"
+
+    networks:
+      - authentik_internal
+      - proxy
+
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "${TRAEFIK_DOCKER_NETWORK}"
+
+      # Router del panel de Authentik
+      traefik.http.routers.authentik.rule: "Host(`${AUTHENTIK_DOMAIN}`)"
+      traefik.http.routers.authentik.entrypoints: "${TRAEFIK_ENTRYPOINT_SECURE}"
+      traefik.http.routers.authentik.tls.certresolver: "${TRAEFIK_CERTRESOLVER}"
+      traefik.http.services.authentik.loadbalancer.server.port: "${AUTHENTIK_HTTP_PORT}"
+
+      # Middleware de forwardAuth que usaremos en Portainer, Pi-hole, etc.
+      traefik.http.middlewares.authentik.forwardauth.address: "http://authentik-server:${AUTHENTIK_HTTP_PORT}/outpost.goauthentik.io/auth/traefik"
+      traefik.http.middlewares.authentik.forwardauth.trustForwardHeader: "true"
+      traefik.http.middlewares.authentik.forwardauth.authResponseHeaders: "X-Authentik-Username,X-Authentik-Groups,X-Authentik-Email,X-Authentik-Uid,X-Authentik-Jwt"
+
+      # Callback del outpost en gitea hacia Authentik
+      traefik.http.routers.authentik-outpost-gitea.rule: "Host(`${GITEA_DOMAIN}`) && PathPrefix(`/outpost.goauthentik.io/`)"
+      traefik.http.routers.authentik-outpost-gitea.entrypoints: "${TRAEFIK_ENTRYPOINT_SECURE}"
+      traefik.http.routers.authentik-outpost-gitea.tls.certresolver: "${TRAEFIK_CERTRESOLVER}"
+      traefik.http.routers.authentik-outpost-gitea.service: "authentik"
+      traefik.http.routers.authentik-outpost-gitea.priority: "50"
+
+  authentik-worker:
+    image: ${AUTHENTIK_IMAGE}
+    container_name: authentik-worker
+    restart: unless-stopped
+    command: ["worker"]
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+
+      AUTHENTIK_POSTGRESQL__HOST: ${AUTHENTIK_DB_HOST}
+      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_DB_USER}
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DB_NAME}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+
+      AUTHENTIK_REDIS__HOST: ${AUTHENTIK_REDIS_HOST}
+
+    depends_on:
+      - authentik-postgres
+      - authentik-redis
+    networks:
+      - authentik_internal
+
+networks:
+  proxy:
+    external: true
+  authentik_internal:
+    driver: bridge
+
