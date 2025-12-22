@@ -79,14 +79,6 @@ services:
       traefik.http.routers.authentik-outpost-gitea.service: "authentik"
       traefik.http.routers.authentik-outpost-gitea.priority: "50"
 
-      # ✅ CORRECCIÓN: Callback del outpost para tu WEB (www.thehomelesssherlock.com)
-      traefik.http.routers.authentik-outpost-ths.rule: "Host(`thehomelesssherlock.com`,`www.thehomelesssherlock.com`) && PathPrefix(`/outpost.goauthentik.io/`)"
-      traefik.http.routers.authentik-outpost-ths.entrypoints: "${TRAEFIK_ENTRYPOINT_SECURE}"
-      traefik.http.routers.authentik-outpost-ths.tls: "true"
-      traefik.http.routers.authentik-outpost-ths.tls.certresolver: "${TRAEFIK_CERTRESOLVER}"
-      traefik.http.routers.authentik-outpost-ths.service: "authentik"
-      traefik.http.routers.authentik-outpost-ths.priority: "250"
-
   authentik-worker:
     image: ${AUTHENTIK_IMAGE}
     container_name: authentik-worker
